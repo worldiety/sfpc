@@ -1,244 +1,314 @@
-package sfpc
+package sfpc_test
 
 import (
+	. "github.com/worldiety/sfpc"
+
 	"encoding/binary"
-	"fmt"
-	"github.com/worldiety/byteorder"
 	"math"
 	"math/rand"
-	"strconv"
 	"testing"
 )
 
-
-
-func TestBlb(t *testing.T) {
-	fmt.Printf("%.100g\n", float64(0.2))
-
-	a,err := strconv.ParseFloat("1.797693134862315708145274237317043567981e+308",64)
-	if err !=nil{
-		t.Fatal(err)
+func BenchmarkEmptyCall(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		emptyCall()
 	}
+}
 
-
-	fmt.Println(math.Abs(a-(-a)))
-
-	const epsilon = 1e-6
-
-	table := []struct {
-		val float64
-	}{
-		{5},
-		{5.1},
-		{5.01},
-		{5.001},
-		{0.2},
-		{float64(float32(0.2))},
-		{0.23},
-		{0.245},
-		{12.24},
-		{99999999.99},
-		{15.15},
-		{4.60},
-	}
-	for _, s := range table {
-		v := s.val
-		for i := 0; i < 5; i++ {
-			if _, frac := math.Modf(math.Abs(v)); frac < epsilon || frac > 1.0-epsilon {
-				fmt.Println("is exact for ", v, i, frac)
-				var tmp [11]byte
-				n := binary.PutVarint(tmp[:], int64(v))
-				fmt.Println("as varint requires: ", n, "bytes")
-			} else {
-				fmt.Println(v, "is not exact")
-			}
-			v *= 10
-		}
-
-	}
+//go:noinline
+func emptyCall() {
 
 }
 
-func TestIsInt(t *testing.T) {
-	table := []struct {
-		val   float64
-		isInt bool
-	}{
-		{math.MaxFloat64, false},
-		{-math.MaxFloat64, false},
-		{math.MinInt64, true},
-		{math.MaxInt64, true},
+func BenchmarkPutFloat1(b *testing.B) {
+	tmp := make([]byte, MaxLen)
 
-		// we cannot test min/max int properly, because float64 cannot express those values anyway
-		{math.MinInt64 - 10000, false},
-		{math.MaxInt64 + 10000, false},
-
-		{5.0, true},
-		{5.1, false},
-		{5.01, false},
-		{5.0000001, false},
-		{5.00000001, true},
-		{5.000000001, true},
-		{5.0000000001, true},
-
-		{-5.0, true},
-		{-5.1, false},
-		{-5.01, false},
-		{-5.0000001, false},
-		{-5.00000001, true},
-		{-5.000000001, true},
-		{-5.0000000001, true},
+	for i := 0; i < b.N; i++ {
+		PutFloat(tmp, 25.25)
 	}
+}
 
-	for _, s := range table {
-		if isInt(s.val) != s.isInt {
-			t.Fatalf("expected %v to be int == %v but is %v", s.val, s.isInt, !s.isInt)
+func BenchmarkPutFloat2(b *testing.B) {
+	tmp := make([]byte, MaxLen)
+
+	for i := 0; i < b.N; i++ {
+		PutFloat(tmp, 2525.25252525)
+	}
+}
+
+func BenchmarkPutFloat3(b *testing.B) {
+	tmp := make([]byte, MaxLen)
+
+	for i := 0; i < b.N; i++ {
+		PutFloat(tmp, math.MaxFloat64)
+	}
+}
+
+func BenchmarkReadFloat1(b *testing.B) {
+	tmp := make([]byte, MaxLen)
+	PutFloat(tmp, 25.25)
+
+	for i := 0; i < b.N; i++ {
+		Float(tmp)
+	}
+}
+
+func BenchmarkReadFloat2(b *testing.B) {
+	tmp := make([]byte, MaxLen)
+	PutFloat(tmp, 2525.25252525)
+
+	for i := 0; i < b.N; i++ {
+		Float(tmp)
+	}
+}
+
+func BenchmarkReadFloat3(b *testing.B) {
+	tmp := make([]byte, MaxLen)
+	PutFloat(tmp, math.MaxFloat64)
+
+	for i := 0; i < b.N; i++ {
+		Float(tmp)
+	}
+}
+
+func TestPutFloatLong(t *testing.T) {
+	const rangeBound = 1_000
+
+	tmp := make([]byte, MaxLen)
+
+	for i := float64(-rangeBound) * 10; i <= rangeBound*10; i++ {
+		for f := float64(-rangeBound); f <= rangeBound; f++ {
+			v := i + (f * 1 / rangeBound)
+			n := PutFloat(tmp, v)
+
+			rv, rn := Float(tmp)
+			if rn != n {
+				t.Fatalf("%v: expected written length %v equal to read length %v", v, n, rn)
+			}
+
+			assertEquals(t, v, rv)
 		}
 	}
 }
 
-func TestFloatIsEqual(t *testing.T) {
-	table := []struct {
-		a, b    float64
-		isEqual bool
-	}{
-		{0.2, float64(float32(0.2)), true},
-		{0.5, float64(float32(0.2) + float32(0.3)), true},
-		{0.2, float64(float32(0.2) + float32(0.3) - 0.3), true},
-		{math.Pi, float64(float32(math.Pi)), true},
+func TestPutFloatRandF64(t *testing.T) {
+	const rangeBound = 10_000_000
 
-		{5, 5, true},
-		{5.1, 5.2, false},
-		{5.01, 5.02, false},
-		{5.001, 5.002, false},
-		{5.0001, 5.0002, false},
-		{5.00001, 5.00002, false},
-		{5.000001, 5.000002, false},
-		{5.0000001, 5.0000002, true},
-		{5.00000001, 5.00000002, true},
-		{5.000000001, 5.000000002, true},
-	}
+	rd := rand.New(rand.NewSource(1234)) //nolint:gosec
+	tmp := make([]byte, MaxLen)
 
-	for _, s := range table {
-		if float64equals(s.a, s.b) != s.isEqual {
-			if s.isEqual {
-				t.Fatalf("expected %v and %v to be equal", s.a, s.b)
-			} else {
-				t.Fatalf("expected %v and %v to be unequal", s.a, s.b)
-			}
-
+	for i := 0; i < rangeBound; i++ {
+		if _, err := rd.Read(tmp); err != nil {
+			t.Fatal(err)
 		}
+
+		v := math.Float64frombits(binary.LittleEndian.Uint64(tmp))
+		n := PutFloat(tmp, v)
+
+		rv, rn := Float(tmp)
+		if rn != n {
+			t.Fatalf("%v: expected written length %v equal to read length %v", v, n, rn)
+		}
+
+		assertEquals(t, v, rv)
 	}
 }
 
-func TestFloat16(t *testing.T) {
-	table := []struct {
-		v         float64
-		isFloat16 bool
-	}{
-		{0.2, true},
-		{0.5, true},
-		{0.2, true},
-		{math.Pi, true},
+func TestPutFloatRandF32(t *testing.T) {
+	const rangeBound = 10_000_000
 
-		{5, true},
-		{5.1, false},
-		{5.01, false},
-		{5.001, false},
-		{5.0001, false},
-		{5.00001, false},
-		{5.000001, false},
-		{5.0000001, true},
-		{5.00000001, true},
-		{5.000000001, true},
-	}
+	rd := rand.New(rand.NewSource(767)) //nolint:gosec
+	tmp := make([]byte, MaxLen)
 
-	for _, s := range table {
-		v, ok := asFloat16(s.v)
-		if ok != s.isFloat16 {
-			if s.isFloat16 {
-				t.Fatalf("expected %v to be representable as float16", s.v)
-			} else {
-				t.Fatalf("expected %v not to be representable as float16", s.v)
-			}
+	for i := 0; i < rangeBound; i++ {
+		if _, err := rd.Read(tmp); err != nil {
+			t.Fatal(err)
 		}
 
-		if !float64equals(float64(v), s.v) {
-			t.Fatalf("expected float64 %v but got %v", s.v, v)
-		}
-	}
+		v := float64(math.Float32frombits(binary.LittleEndian.Uint32(tmp)))
+		n := PutFloat(tmp, v)
 
+		rv, rn := Float(tmp)
+		if rn != n {
+			t.Fatalf("%v: expected written length %v equal to read length %v", v, n, rn)
+		}
+
+		assertEquals(t, v, rv)
+	}
+}
+
+func TestPutFloatRandI64(t *testing.T) {
+	const rangeBound = 10_000_000
+
+	rd := rand.New(rand.NewSource(3234)) //nolint:gosec
+	tmp := make([]byte, MaxLen)
+
+	for i := 0; i < rangeBound; i++ {
+		v := float64(int64(rd.Uint64()))
+		n := PutFloat(tmp, v)
+
+		rv, rn := Float(tmp)
+		if rn != n {
+			t.Fatalf("%v: expected written length %v equal to read length %v", v, n, rn)
+		}
+
+		assertEquals(t, v, rv)
+	}
+}
+
+func TestPutFloatRandI32(t *testing.T) {
+	const rangeBound = 10_000_000
+
+	rd := rand.New(rand.NewSource(345)) //nolint:gosec
+	tmp := make([]byte, MaxLen)
+
+	for i := 0; i < rangeBound; i++ {
+		v := float64(int32(rd.Uint64()))
+		n := PutFloat(tmp, v)
+
+		rv, rn := Float(tmp)
+		if rn != n {
+			t.Fatalf("%v: expected written length %v equal to read length %v", v, n, rn)
+		}
+
+		assertEquals(t, v, rv)
+	}
+}
+
+func TestPutFloatRandI16(t *testing.T) {
+	const rangeBound = 10_000_000
+
+	rd := rand.New(rand.NewSource(492)) //nolint:gosec
+	tmp := make([]byte, MaxLen)
+
+	for i := 0; i < rangeBound; i++ {
+		v := float64(int16(rd.Uint64()))
+		n := PutFloat(tmp, v)
+
+		rv, rn := Float(tmp)
+		if rn != n {
+			t.Fatalf("%v: expected written length %v equal to read length %v", v, n, rn)
+		}
+
+		assertEquals(t, v, rv)
+	}
 }
 
 func TestPutFloat(t *testing.T) {
-	rd := rand.New(rand.NewSource(1234))
 	tmp := make([]byte, MaxLen)
 
 	testTable := []struct {
 		val    float64
 		length int
 	}{
-		{float64(byteorder.MaxInt64), 9},
-		{-129, 3},
-		{0, 1},
-		{-128, 1},
 
-		{123, 1},
-		{124, 2},
-		{math.NaN(), 9},
-		{float64(byteorder.MaxInt56), 9},
+		{1389062588068379648, 9},
+		{-15, 1},
+
+		{0, 1},
+		{1, 1},
+		{127, 1},
+		{128, 3},
+		{-113, 1},
+		{-114, 2},
+		{-115, 2},
+		{-127, 2},
+		{-128, 3},
+
+		{255, 3},
+		{2.55, 3},
+		{25.5, 3},
+		{256, 3},
+
+		{1, 1},
+		{0.1, 2},
+		{0.01, 2},
+		{0.001, 2},
+		{0.0001, 2},
+		{0.00001, 5}, // this is a float32
+
+		{1, 1},
+		{10, 1},
+		{100, 1},
+		{1000, 3},
+		{10000, 3},
+		{100000, 4},
+
+		{1, 1},
+		{1.1, 2},
+		{1.01, 2},
+		{1.001, 3},
+		{1.0001, 3},
+		{1.00001, 9}, // float32 is not exact enough
+
+		{0, 1},
+		{-129, 3},
+
+		{float64(16383), 3},
+		{float64(16384), 4},
+
+		{float64(2097151), 4},
+		{float64(2097152), 5},
+
+		{float64(134217728), 5},
+		{float64(268435455), 5},
+		{float64(math.MaxInt32), 6},
+
+		{float64(math.MaxInt64), 5},
+		{float64(math.MinInt64), 5},
+		{math.MaxFloat64, 9},
+		{math.MaxFloat32, 5},
+
+		{math.Inf(1), 1},
+		{math.Inf(-1), 1},
+		{math.NaN(), 1},
+
+
+		{115, 1},
+		{116, 1},
 	}
 
 	for _, s := range testTable {
 		wN := PutFloat(tmp, s.val)
+
 		v, rN := Float(tmp)
 		if wN != rN {
-			t.Fatalf("written %v bytes but read %v bytes back", wN, rN)
+			t.Fatalf("%v: written %v bytes but read %v bytes back", s.val, wN, rN)
 		}
 
 		if wN != s.length {
 			t.Fatalf("length for %v should be %v but was %v", s.val, s.length, wN)
 		}
 
-		if v != s.val {
-			if math.IsNaN(v) && math.IsNaN(s.val) {
-				continue
-			}
-
-			t.Fatalf("expected \n%v (%b) bot got \n%v (%b)", s.val, math.Float64bits(s.val), v, math.Float64bits(v))
-		}
+		assertEquals(t, s.val, v)
 	}
 
-	for i := 0; i < 1_000_000_00; i++ {
-		val := int32(rd.Uint32())
-		wN := PutFloat(tmp, float64(val))
-		v, rN := Float(tmp)
-		if wN != rN {
-			t.Fatalf("written %v bytes but read %v bytes back", wN, rN)
-		}
+}
 
-		if int32(v) != val {
-			t.Fatalf("expected %v bot got %v", val, v)
-		}
+func assertEquals(t *testing.T, expected, b float64) {
+	const epsilon = 1e-9
+
+	t.Helper()
+
+	if expected == b {
+		return
 	}
 
-	for i := byteorder.MinInt24; i <= byteorder.MaxInt24; i++ {
-		val := int32(rd.Uint32())
-		wN := PutFloat(tmp, float64(val))
-		v, rN := Float(tmp)
-		if wN != rN {
-			t.Fatalf("written %v bytes but read %v bytes back", wN, rN)
-		}
-
-		if int32(v) != val {
-			t.Fatalf("expected %v bot got %v", val, v)
-		}
+	if math.IsNaN(expected) && math.IsNaN(b) {
+		return
 	}
 
-	for i := byteorder.MinInt8; i <= embeddMaxVal; i++ {
-		if PutFloat(tmp, float64(i)) != 1 {
-			t.Fatal("must be encoded as a single byte")
-		}
+	if math.IsInf(expected, -1) && math.IsInf(b, -1) {
+		return
 	}
 
+	if math.IsInf(expected, 1) && math.IsInf(b, 1) {
+		return
+	}
+
+	if i, frac := math.Modf(math.Abs(expected - b)); i == 0 && (frac < epsilon || frac > 1.0-epsilon) {
+		return
+	}
+
+	t.Fatalf("expected \n%.100f (%b) bot got \n%.100f (%b)", expected, math.Float64bits(expected), b, math.Float64bits(b))
 }
