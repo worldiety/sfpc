@@ -44,28 +44,29 @@ const (
 const (
 	embeddedMinSigned = 127 - embeddMaxVal
 	embeddedMaxSigned = 127
-	embeddMinVal      = 0
 	embeddMaxVal      = 240 // this is the unsigned representation, the int8 range is -113 to 128
 
-	// MaxLen is the maximum length, after encoding
+	// MaxLen is the maximum length, after encoding.
 	MaxLen = 9
 
 	// epsilon is used to check if a float fraction is smaller or larger than the given value.
 	epsilon = 1e-9
 
-	maxInt56 = 1<<55 - 1
-	minInt56 = -1 << 55
+	maxInt56        = 1<<55 - 1
+	minInt56        = -1 << 55
+	varuintlenlimit = 8
+	               //-1359034801756235
+	maxIntInFloat64 = 9007199254740993 // 2^53−1
 )
 
 //
 // PutFloat performs a variable length float64 compression algorithm, which requires at worst 9 byte instead of 8.
 // It has a lossy accuracy for the fraction part of less than 10^-9. It works best for small decimal floats
 // or natural numbers.
-func PutFloat(dst []byte, v float64) int {
-
+func PutFloat(dst []byte, v float64) int { //nolint:funlen,gocognit
 	// check if it is worth inspecting for int representation
+	//nolint:nestif
 	if v < maxInt56 && v > minInt56 {
-
 		// rounding error is small enough, so it can be encoded as an integer. We know, that it cannot be larger
 		// than int64 range.
 		if _, frac := math.Modf(math.Abs(v)); frac < epsilon || frac > 1.0-epsilon {
@@ -81,56 +82,53 @@ func PutFloat(dst []byte, v float64) int {
 			if v < 0 {
 				n := binary.PutUvarint(dst[1:], uint64(-v))
 				// think about checking for a shorter float32 representation
-				if n <= 8 {
+				if n <= varuintlenlimit {
 					dst[0] = tnscale0
 
 					return n + 1
 				}
-
 			} else {
 				n := binary.PutUvarint(dst[1:], uint64(v))
 				// think about checking for a shorter float32 representation
-				if n <= 8 {
+				if n <= varuintlenlimit {
 					dst[0] = tpscale0
 
 					return n + 1
 				}
-			}
-
-			// jump out and try to encode as float32 or be lossless
-		} else {
+			} // jump out and try to encode as float32 or be lossless
+		} else if v*10_000 < maxIntInFloat64 && v*10_000 > -maxIntInFloat64 {
+			// we must not exceed the lossless representation of natural number in float64, otherwise
+			// our scaling will be incorrect
 			// we have a fraction, but check if we can scale and encode it efficiently using var uints
-			scaler := float64(10)
-			for scaleStep := 1; scaleStep <= 4; scaleStep += 1 {
+			scaler := float64(10) //nolint:gomnd
+			for scaleStep := 1; scaleStep <= 4; scaleStep++ {
 				scaled := v * scaler
 				// rounding error is small enough, so it can be represented as an integer
 				if _, frac := math.Modf(math.Abs(scaled)); frac < epsilon || frac > 1.0-epsilon {
-
 					if v < 0 {
 						n := binary.PutUvarint(dst[1:], uint64(-math.Round(scaled)))
 						// a float32 cannot encode better
-						if n <= 4 {
+						if n <= varuintlenlimit {
 							dst[0] = byte(tnscale0 + scaleStep)
 
 							return n + 1
-						} else {
-							// need to many bytes, try to encode as float32 or lossless
-							break
 						}
+
+						// need to many bytes, try to encode as float32 or lossless
+						break
 					} else {
 						n := binary.PutUvarint(dst[1:], uint64(math.Round(scaled)))
 
 						// a float32 cannot encode better
-						if n <= 4 {
+						if n <= varuintlenlimit {
 							dst[0] = byte(tpscale0 + scaleStep)
 
 							return n + 1
-						} else {
-							// need to many bytes, try to encode as float32 or lossless
-							break
 						}
-					}
 
+						// need to many bytes, try to encode as float32 or lossless
+						break
+					}
 				}
 				scaler *= 10
 			}
@@ -163,18 +161,20 @@ func PutFloat(dst []byte, v float64) int {
 	if i, frac := math.Modf(math.Abs(v - f32)); i == 0 && (frac < epsilon || frac > 1.0-epsilon) {
 		dst[0] = tfloat32
 		binary.LittleEndian.PutUint32(dst[1:], math.Float32bits(float32(v)))
-		return 5
+
+		return 5 //nolint:gomnd
 	}
 
 	// any other case
 	dst[0] = tfloat64
 	binary.LittleEndian.PutUint64(dst[1:], math.Float64bits(v))
-	return 9
+
+	return 9 //nolint:gomnd
 }
 
 // Float reads the variable float representation from the buffer and returns the amount of bytes read.
 // See PutFloat for details.
-func Float(src []byte) (float64, int) {
+func Float(src []byte) (float64, int) { //nolint:gocognit
 	prefix := src[0]
 
 	// return embedded value
@@ -183,9 +183,11 @@ func Float(src []byte) (float64, int) {
 	}
 
 	// uvarint encoding
+	//nolint:nestif
 	if prefix >= tpscale0 && prefix <= tnscale4 {
 		uv, l := binary.Uvarint(src[1:])
 		v := float64(uv)
+
 		if prefix >= tnscale0 {
 			v *= -1
 		}
@@ -209,7 +211,6 @@ func Float(src []byte) (float64, int) {
 		if prefix == tpscale4 || prefix == tnscale4 {
 			return v / 10000, l + 1
 		}
-
 	}
 
 	if prefix == tfloat32 {
@@ -232,5 +233,6 @@ func Float(src []byte) (float64, int) {
 
 	// we avoid throwing a panic here, to allow theoretical inline, but method is probably to complex anyway
 	v := math.Float64frombits(binary.LittleEndian.Uint64(src[1:]))
-	return v, 9
+
+	return v, 9 //nolint:gomnd
 }

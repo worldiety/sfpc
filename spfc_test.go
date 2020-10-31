@@ -1,13 +1,28 @@
 package sfpc_test
 
 import (
-	. "github.com/worldiety/sfpc"
-
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"testing"
+
+	. "github.com/worldiety/sfpc"
 )
+
+func TestMain(m *testing.M) {
+	rc := m.Run()
+	requiredCoverage := 1.0
+
+	if rc == 0 && testing.CoverMode() != "" {
+		c := testing.Coverage()
+		if c < requiredCoverage {
+			fmt.Printf("code coverage to low: %f/%f\n", c, requiredCoverage)
+			os.Exit(-1)
+		}
+	}
+}
 
 func BenchmarkEmptyCall(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -17,7 +32,6 @@ func BenchmarkEmptyCall(b *testing.B) {
 
 //go:noinline
 func emptyCall() {
-
 }
 
 func BenchmarkPutFloat1(b *testing.B) {
@@ -194,6 +208,7 @@ func TestPutFloatRandI16(t *testing.T) {
 	}
 }
 
+//nolint: funlen
 func TestPutFloat(t *testing.T) {
 	tmp := make([]byte, MaxLen)
 
@@ -202,6 +217,12 @@ func TestPutFloat(t *testing.T) {
 		length int
 	}{
 
+		{-135903480175.6234893798828125, 9},
+		{-1021453172116903.125, 9},
+		{536139763530514.4375, 9},
+		{9007199254740992, 9},
+		{9007199254740992.1, 9},
+		{9007199254740992.01, 9},
 		{1389062588068379648, 9},
 		{-15, 1},
 
@@ -263,7 +284,6 @@ func TestPutFloat(t *testing.T) {
 		{math.Inf(-1), 1},
 		{math.NaN(), 1},
 
-
 		{115, 1},
 		{116, 1},
 	}
@@ -282,7 +302,6 @@ func TestPutFloat(t *testing.T) {
 
 		assertEquals(t, s.val, v)
 	}
-
 }
 
 func assertEquals(t *testing.T, expected, b float64) {
