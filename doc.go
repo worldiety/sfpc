@@ -17,7 +17,7 @@
 // Package sfpc - *simple floating point compressor* - prodivdes a lossy variable length encoding
 // for individual double precision float numbers with a fractional accuracy of 10^-9.
 //
-// motivation
+// Motivation
 //
 // When dealing with sensor metrics, like SCADA systems, numbers are often represented
 // using fixed point decimal metrics. However, in data analytics, these metrics are
@@ -32,7 +32,7 @@
 // We evaluated, that in our use cases, 80% of our data is located in the decimal
 // range of 0.000 up to 100.000.
 //
-// concept
+// Concept
 //
 // We learned, that a float contains a lot of noise, even for very small numbers near zero.
 // We know, that noise is bad for compression. But, we also learned, that the noise
@@ -49,12 +49,12 @@
 // in the two byte range this would only require 1.86GiB of memory instead and you
 // can still be sure, that the precision of the fraction is not worse than 10^-9.
 //
-// encoding characteristics
+// Encoding characteristics
 //
 // As a general rule, we always store the original float64, if we cannot guarantee a
 // fractional accuracy of 10^-9, which is the lossless part of our procedure. This is
 // also the worst case, where we need 9 byte instead of 8, due to our prefix encoding.
-// However, in the following cases, we need less bytes:
+// However, in the following cases, we need less bytes, usually by applying some rounding:
 //
 //  * any natural number between -114 and 128 is encoded directly in the prefix byte.
 //  * special values like +Inf, -Inf and NaN are encoded directly in the prefix byte.

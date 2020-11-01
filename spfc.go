@@ -55,8 +55,12 @@ const (
 	maxInt56        = 1<<55 - 1
 	minInt56        = -1 << 55
 	varuintlenlimit = 8
-	               //-1359034801756235
-	maxIntInFloat64 = 9007199254740993 // 2^53−1
+
+	// maxIntInFloat64 should be actually 2^53−1 => 9007199254740993 but we found, that
+	// multiplying -135903480175.6234893798828125 by 10.000 returns the wrong number -1359034801756235
+	// even though it is entirely in range. So we just try a random smaller number. Same also
+	// happens for 1027657234.45149993896484375.
+	maxIntInFloat64 = 1<<24 - 1
 )
 
 //
